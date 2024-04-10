@@ -87,10 +87,17 @@ impl Estimator {
     pub fn age(&self, shift: u8) {
         for (slot, _) in self.estimator.iter() {
             for counter in slot.iter() {
+                let current = counter.load(Ordering::Relaxed);
+                let next = current >> shift;
+                if let Err(err) =
+                    counter.compare_exchange(current, next, Ordering::Relaxed, Ordering::Relaxed)
+                {
+                    panic!("AHHHH {:?}", err)
+                }
                 // we don't CAS because the only update between the load and store
                 // is fetch_add(1), which should be fine to miss/ignore
-                let c = counter.load(Ordering::Relaxed);
-                counter.store(c >> shift, Ordering::Relaxed);
+                // let c = counter.load(Ordering::Relaxed);
+                // counter.store(c >> shift, Ordering::Relaxed);
             }
         }
     }
@@ -177,26 +184,31 @@ mod tests {
 
     #[test]
     fn test_tiny_lfu() {
-        let tiny = TinyLfu::new(1);
-        assert_eq!(tiny.get(1), 0);
-        assert_eq!(tiny.incr(1), 1);
-        assert_eq!(tiny.incr(1), 2);
-        assert_eq!(tiny.get(1), 2);
+        for i in 0..1_000_000 {
+            println!("====== NEW RUN ====== {i}");
+            let tiny = TinyLfu::new(1);
 
-        assert_eq!(tiny.get(2), 0);
-        assert_eq!(tiny.incr(2), 1);
-        assert_eq!(tiny.incr(2), 2);
-        assert_eq!(tiny.get(2), 2);
+            assert_eq!(tiny.get(1), 0);
+            assert_eq!(tiny.incr(1), 1);
+            assert_eq!(tiny.incr(1), 2);
+            assert_eq!(tiny.get(1), 2);
 
-        assert_eq!(tiny.incr(3), 1);
-        assert_eq!(tiny.incr(3), 2);
-        assert_eq!(tiny.incr(3), 3);
-        assert_eq!(tiny.incr(3), 4);
+            assert_eq!(tiny.get(2), 0);
+            assert_eq!(tiny.incr(2), 1);
+            assert_eq!(tiny.incr(2), 2);
+            assert_eq!(tiny.get(2), 2);
 
-        // 8 incr(), now reset
+            assert_eq!(tiny.incr(3), 1);
+            assert_eq!(tiny.incr(3), 2);
+            assert_eq!(tiny.incr(3), 3);
+            assert_eq!(tiny.incr(3), 4);
+            assert_eq!(tiny.get(3), 4);
 
-        assert_eq!(tiny.incr(3), 3);
-        assert_eq!(tiny.incr(1), 2);
-        assert_eq!(tiny.incr(2), 2);
+            // 8 incr(), now reset
+
+            assert_eq!(tiny.incr(3), 3);
+            assert_eq!(tiny.incr(1), 2);
+            assert_eq!(tiny.incr(2), 2);
+        }
     }
 }
